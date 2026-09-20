@@ -1,34 +1,44 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const cors = require('cors');
+
+// Stealth mode ON taaki Cloudflare Captcha na maange
+puppeteer.use(StealthPlugin());
 
 const app = express();
 app.use(cors());
 
 app.get('/', (req, res) => {
-    res.send("Puppeteer API is Live! Use /api/scrape?month=sep.2026");
+    res.send("Stealth Puppeteer API is Live! Use /api/scrape?month=sep.2026");
 });
 
 app.get('/api/scrape', async (req, res) => {
+    let browser = null;
     try {
         const month = req.query.month || 'this';
         const targetUrl = `https://www.forexfactory.com/calendar?month=${month}`;
 
-        // Asli Chrome browser start karna
-        const browser = await puppeteer.launch({
-            args: ['--no-sandbox', '--disable-setuid-sandbox'], // Render cloud ke liye zaroori
+        browser = await puppeteer.launch({
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
             headless: true 
         });
 
         const page = await browser.newPage();
         
-        // Cloudflare ko dhoka dene ke liye User Agent set karna
+        // Asli browser jaisa behave karne ke liye
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1366, height: 768 });
 
-        // Page load hone tak wait karna
-        await page.goto(targetUrl, { waitUntil: 'networkidle2' });
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
-        // Page ke andar se data nikalna
+        // Wait karo jab tak calendar load na ho jaye (ya 5 second)
+        try {
+            await page.waitForSelector('.calendar__row', { timeout: 5000 });
+        } catch (e) {
+            console.log("Calendar rows load nahi hui, shayaad abhi bhi Captcha hai.");
+        }
+
         const newsData = await page.evaluate(() => {
             const rows = document.querySelectorAll('.calendar__row');
             const data = [];
@@ -64,8 +74,9 @@ app.get('/api/scrape', async (req, res) => {
         });
 
     } catch (error) {
+        if (browser) await browser.close();
         res.status(500).json({ 
-            error: "Puppeteer scraping fail ho gayi", 
+            error: "Scraping me error aaya", 
             details: error.message 
         });
     }
