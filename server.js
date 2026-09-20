@@ -1,41 +1,74 @@
 const express = require('express');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const cors = require('cors');
 
 const app = express();
+app.use(cors());
 
-// Mobile app ko API access karne ki permission deta hai
-app.use(cors()); 
-
-// Basic check karne ke liye URL
 app.get('/', (req, res) => {
-    res.send("Forex API is Live! Data ke liye /api/news par jayein.");
+    res.send("Scraping API is Live! Use /api/scrape?month=sep.2026 for data.");
 });
 
-// Main API jahan se JSON data aayega
-app.get('/api/news', async (req, res) => {
+// Scraping API Endpoint
+app.get('/api/scrape', async (req, res) => {
     try {
-        const url = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
-        
-        // Browser ban kar request bhejenge taaki block na ho
-        const response = await axios.get(url, {
+        // Agar aap month nahi daalenge toh by default 'this' month lega
+        const month = req.query.month || 'this';
+        const targetUrl = `https://www.forexfactory.com/calendar?month=${month}`;
+
+        // Cloudflare ko bypass karne ke liye strong headers
+        const response = await axios.get(targetUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json',
-                'Referer': 'https://www.forexfactory.com/'
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
             }
         });
-        
-        res.json(response.data);
+
+        // Cheerio se HTML load karna
+        const $ = cheerio.load(response.data);
+        let newsData = [];
+
+        // Table ke har row me loop chalana
+        $('.calendar__row').each((index, element) => {
+            const title = $(element).find('.calendar__event').text().trim();
+            const currency = $(element).find('.calendar__currency').text().trim();
+            
+            // Impact color nikalna
+            let impact = 'Low';
+            if ($(element).find('.icon--ff-impact-red').length > 0) impact = 'High';
+            else if ($(element).find('.icon--ff-impact-ora').length > 0) impact = 'Medium';
+            else if ($(element).find('.icon--ff-impact-yel').length > 0) impact = 'Low';
+
+            // Agar title hai tabhi list me add karo
+            if (title) {
+                newsData.push({
+                    title: title,
+                    currency: currency,
+                    impact: impact
+                });
+            }
+        });
+
+        res.json({
+            success: true,
+            source: targetUrl,
+            total_events: newsData.length,
+            data: newsData
+        });
+
     } catch (error) {
+        // Agar Cloudflare block karega toh yeh error aayega
         res.status(500).json({ 
-            error: "Data load nahi ho paaya", 
+            error: "Scraping fail ho gayi ya IP block ho gayi", 
             details: error.message 
         });
     }
 });
 
-// Render cloud ke liye port setup
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
