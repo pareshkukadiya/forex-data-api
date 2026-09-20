@@ -1,69 +1,71 @@
 const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
 const cors = require('cors');
 
 const app = express();
 app.use(cors());
 
 app.get('/', (req, res) => {
-    res.send("Scraping API is Live! Use /api/scrape?month=sep.2026 for data.");
+    res.send("Puppeteer API is Live! Use /api/scrape?month=sep.2026");
 });
 
-// Scraping API Endpoint
 app.get('/api/scrape', async (req, res) => {
     try {
-        // Agar aap month nahi daalenge toh by default 'this' month lega
         const month = req.query.month || 'this';
         const targetUrl = `https://www.forexfactory.com/calendar?month=${month}`;
 
-        // Cloudflare ko bypass karne ke liye strong headers
-        const response = await axios.get(targetUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
-            }
+        // Asli Chrome browser start karna
+        const browser = await puppeteer.launch({
+            args: ['--no-sandbox', '--disable-setuid-sandbox'], // Render cloud ke liye zaroori
+            headless: true 
         });
 
-        // Cheerio se HTML load karna
-        const $ = cheerio.load(response.data);
-        let newsData = [];
+        const page = await browser.newPage();
+        
+        // Cloudflare ko dhoka dene ke liye User Agent set karna
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-        // Table ke har row me loop chalana
-        $('.calendar__row').each((index, element) => {
-            const title = $(element).find('.calendar__event').text().trim();
-            const currency = $(element).find('.calendar__currency').text().trim();
-            
-            // Impact color nikalna
-            let impact = 'Low';
-            if ($(element).find('.icon--ff-impact-red').length > 0) impact = 'High';
-            else if ($(element).find('.icon--ff-impact-ora').length > 0) impact = 'Medium';
-            else if ($(element).find('.icon--ff-impact-yel').length > 0) impact = 'Low';
+        // Page load hone tak wait karna
+        await page.goto(targetUrl, { waitUntil: 'networkidle2' });
 
-            // Agar title hai tabhi list me add karo
-            if (title) {
-                newsData.push({
-                    title: title,
-                    currency: currency,
-                    impact: impact
-                });
-            }
+        // Page ke andar se data nikalna
+        const newsData = await page.evaluate(() => {
+            const rows = document.querySelectorAll('.calendar__row');
+            const data = [];
+
+            rows.forEach(row => {
+                const titleElement = row.querySelector('.calendar__event');
+                const currencyElement = row.querySelector('.calendar__currency');
+                
+                if (titleElement) {
+                    const title = titleElement.innerText.trim();
+                    const currency = currencyElement ? currencyElement.innerText.trim() : '';
+                    
+                    let impact = 'Low';
+                    if (row.querySelector('.icon--ff-impact-red')) impact = 'High';
+                    else if (row.querySelector('.icon--ff-impact-ora')) impact = 'Medium';
+                    else if (row.querySelector('.icon--ff-impact-yel')) impact = 'Low';
+
+                    if(title) {
+                        data.push({ title, currency, impact });
+                    }
+                }
+            });
+            return data;
         });
+
+        await browser.close();
 
         res.json({
             success: true,
-            source: targetUrl,
+            month: month,
             total_events: newsData.length,
             data: newsData
         });
 
     } catch (error) {
-        // Agar Cloudflare block karega toh yeh error aayega
         res.status(500).json({ 
-            error: "Scraping fail ho gayi ya IP block ho gayi", 
+            error: "Puppeteer scraping fail ho gayi", 
             details: error.message 
         });
     }
@@ -71,5 +73,5 @@ app.get('/api/scrape', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
