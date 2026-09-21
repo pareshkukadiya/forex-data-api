@@ -3,28 +3,26 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-// MT5 se aane wale JSON data ko read karne ke liye
-app.use(express.json()); 
 
-// Yahan MT5 ka data save hoga
+// NAYA: 3 saal ka data bohot bada hoga, isliye limit 50MB kar di hai
+app.use(express.json({ limit: '50mb', extended: true })); 
+
 let mql5CalendarData = []; 
 
 app.get('/', (req, res) => {
     res.send("MQL5 API is Live! App ke liye /api/news use karein.");
 });
 
-// MT5 is link par data bhejega (POST request)
 app.post('/api/upload-mql5', (req, res) => {
     try {
-        mql5CalendarData = req.body; // MT5 se aaya naya data save kar liya
-        console.log("MT5 se naya data receive hua!");
+        mql5CalendarData = req.body; 
+        console.log("MT5 se naya bada data receive hua! Total:", mql5CalendarData.length);
         res.status(200).send("Success");
     } catch (error) {
         res.status(500).send("Error saving data");
     }
 });
 
-// Mobile App is link se data legi (GET request)
 app.get('/api/news', (req, res) => {
     res.json({
         success: true,
