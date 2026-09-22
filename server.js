@@ -4,7 +4,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// NAYA: 3 saal ka data bohot bada hoga, isliye limit 50MB kar di hai
+// 3 saal ka bada data aayega, isliye limit 50MB ki hai
 app.use(express.json({ limit: '50mb', extended: true })); 
 
 let mql5CalendarData = []; 
@@ -13,6 +13,7 @@ app.get('/', (req, res) => {
     res.send("MQL5 API is Live! App ke liye /api/news use karein.");
 });
 
+// MT5 is link par data bhejta hai
 app.post('/api/upload-mql5', (req, res) => {
     try {
         mql5CalendarData = req.body; 
@@ -23,6 +24,7 @@ app.post('/api/upload-mql5', (req, res) => {
     }
 });
 
+// Mobile app is link se data legi
 app.get('/api/news', (req, res) => {
     res.json({
         success: true,
